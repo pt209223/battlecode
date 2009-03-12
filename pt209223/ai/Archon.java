@@ -164,9 +164,9 @@ public class Archon extends AbstractRobot {
 				info("Tworze Channlera...");
 			}
 
-		} else { 
+		} else {
 			if (rc.getEnergonLevel() < 0.5*rc.getMaxEnergonLevel() &&
-					channelers.isEmpty()) { 
+					channelers.isEmpty()) {
 				info("Atakuja... ratunku...");
 				mission = Mission.ESCAPE; return; 
 			}

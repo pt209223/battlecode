@@ -147,7 +147,9 @@ public class Worker extends AbstractRobot {
 
 		// Kieruje sie do pierwszego schodka
 		while (!rc.getLocation().isAdjacentTo(stairs.getFirst())) {
-			if (rc.getLocation() == stairs.getFirst()) // Jak na, to rusz sie gdziekolwiek...
+			if (rc.getLocation().equals(stairs.getFirst()))
+//			if (rc.getLocation().getX() == stairs.getFirst().getX() &&
+//					rc.getLocation().getY() == stairs.getFirst().getY()) // Jak na, to rusz sie gdziekolwiek...
 				stepTo(rc.getLocation().add(rc.getDirection().rotateRight()));
 			else // wpp idz w kierunku schodka
 				stepTo(stairs.getFirst());

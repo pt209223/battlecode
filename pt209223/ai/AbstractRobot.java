@@ -288,7 +288,7 @@ public abstract class AbstractRobot {
 	public void transferEnergonTo(RInfo r)
 	{
 		if ((!rc.getLocation().isAdjacentTo(r.inf.location) &&
-					rc.getLocation() != r.inf.location) ||
+					!rc.getLocation().equals(r.inf.location)) ||
 				rc.getTeam() != r.inf.team || 
 				r.inf.energonLevel > 0.7*r.inf.maxEnergon ||
 				rc.getEnergonLevel() < 0.4*rc.getMaxEnergonLevel())
