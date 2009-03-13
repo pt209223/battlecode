@@ -7,7 +7,6 @@ import static battlecode.common.GameConstants.*;
 
 import pt209223.navigation.*;
 import pt209223.communication.*;
-import static pt209223.communication.Radio.*;
 
 public class Worker extends AbstractRobot {
 	// - Na stairs trzymamy sciezke ukladania blokow.
@@ -32,7 +31,7 @@ public class Worker extends AbstractRobot {
 		stairs = new LinkedList<MapLocation> ();
 	}
 
-	public void run() throws GameActionException 
+	public void run()
 	{
 		mission = Mission.NONE;
 		do_mission();
@@ -45,8 +44,8 @@ public class Worker extends AbstractRobot {
 		while (true) {
 			radio.receive();
 			Message msg = radio.get();
-			if (null == msg) continue;
-			if (MSG_TYPE_STAIRS != msg.ints[MSG_IDX_TYPE]) continue;
+			if (null == msg) continue; // Moze byc przestarzala
+			if (Radio.STAIRS != msg.ints[Radio.TYPE]) continue;
 
 			FluxDeposit[] fds = rc.senseNearbyFluxDeposits();
 			MapLocation flux = null;
@@ -60,10 +59,10 @@ public class Worker extends AbstractRobot {
 			}
 	
 			stairs.clear();
-			for (int i = MSG_STAIRS_L_START, cnt = 0; cnt < msg.ints[MSG_STAIRS_I_SIZE]; ++i, ++cnt) 
+			for (int i = Radio.STAIRS_START, cnt = 0; cnt < msg.ints[Radio.STAIRS_SIZE]; ++i, ++cnt) 
 				stairs.addFirst(msg.locations[i]);
 			if (!rc.getLocation().isAdjacentTo(stairs.getLast()) || 
-					stairs.getLast() != flux) {
+					!stairs.getLast().equals(flux)) {
 				info("Nieprawidlowe dane od Archona...");
 				stairs.clear();
 				stairs.addFirst(flux);
@@ -148,8 +147,6 @@ public class Worker extends AbstractRobot {
 		// Kieruje sie do pierwszego schodka
 		while (!rc.getLocation().isAdjacentTo(stairs.getFirst())) {
 			if (rc.getLocation().equals(stairs.getFirst()))
-//			if (rc.getLocation().getX() == stairs.getFirst().getX() &&
-//					rc.getLocation().getY() == stairs.getFirst().getY()) // Jak na, to rusz sie gdziekolwiek...
 				stepTo(rc.getLocation().add(rc.getDirection().rotateRight()));
 			else // wpp idz w kierunku schodka
 				stepTo(stairs.getFirst());
@@ -175,7 +172,7 @@ public class Worker extends AbstractRobot {
 				break;
 			} else {
 				added = false;
-				if (stairs.getLast() == l) {
+				if (stairs.getLast().equals(l)) {
 					// Nastepny jest flux!
 					unloadExactlyThere(l);
 					break;
@@ -235,7 +232,7 @@ public class Worker extends AbstractRobot {
 		int r = rand.nextInt(ds.length);
 		Direction d = ds[r];
 
-		if (Direction.OMNI == d || Direction.NONE == d)
+		if (Direction.OMNI.equals(d) || Direction.NONE.equals(d))
 			d = rc.getDirection();
 
 		stepTo(rc.getLocation().add(d));
@@ -261,7 +258,7 @@ public class Worker extends AbstractRobot {
 					if (null == tb) continue;
 
 					for (Direction d : Direction.values()) {
-						if (Direction.OMNI == d || Direction.NONE == d) continue;
+						if (Direction.OMNI.equals(d) || Direction.NONE.equals(d)) continue;
 						TInfo t = getFromMap(b.add(d));
 						if (null != t && checkHeight(t, tb)) { ok = b.add(d); break; }
 					}
@@ -299,7 +296,7 @@ public class Worker extends AbstractRobot {
 		Direction d = rc.getLocation().directionTo(l);
 		while (true) {
 			try { 
-				if (rc.getDirection() != d) {
+				if (!rc.getDirection().equals(d)) {
 					waitForMove();
 					rc.setDirection(d);
 				}

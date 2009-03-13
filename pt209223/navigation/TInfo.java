@@ -21,7 +21,7 @@ public class TInfo {
 		blocks = rc.senseNumBlocksAtLocation(loc);
 		TerrainTile tt = rc.senseTerrainTile(loc);
 		height = tt.getHeight();
-		land = (tt.getType() == TerrainTile.TerrainType.LAND);
+		land = tt.getType().equals(TerrainTile.TerrainType.LAND);
 		Robot ar = rc.senseAirRobotAtLocation(loc);
 		Robot gr = rc.senseGroundRobotAtLocation(loc);
 		groundRobot = (null == gr) ? null : (new RInfo(rc.senseGroundRobotAtLocation(loc), rc));

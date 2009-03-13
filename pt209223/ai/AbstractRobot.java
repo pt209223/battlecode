@@ -9,7 +9,7 @@ import static battlecode.common.GameConstants.*;
 
 import pt209223.navigation.*;
 import pt209223.communication.*;
-import static pt209223.communication.Radio.*;
+import pt209223.communication.*;
 
 public abstract class AbstractRobot {
 	public enum Mission {
@@ -57,32 +57,37 @@ public abstract class AbstractRobot {
 	}
 
 	// Kazdy robot ma miec zdefiniowane co ma robic.
-	abstract public void run() throws GameActionException;
+	abstract public void run();
 
-	public void do_mission() throws GameActionException
+	public void do_mission()
 	{
 		while (true) {
-			switch (mission) {
-				case NONE:
-					do_none(); break;
-				case RANDOM:
-					do_random(); break;
-				case ESCAPE:
-					do_escape(); break;
-				case ATTACK:
-					do_attack(); break;
-				case STOP:
-					do_stop(); break;
-				case GOTO:
-					do_goto(); break;
-				case GOTO_FLUX:
-					do_goto_flux(); break;
-				case GOTO_ENEMY: 
-					do_goto_enemy(); break;
-				case GOTO_ARCHON:
-					do_goto_archon(); break;
-				case GOTO_BLOCK:
-					do_goto_block(); break;
+			try {
+				switch (mission) {
+					case NONE:
+						do_none(); break;
+					case RANDOM:
+						do_random(); break;
+					case ESCAPE:
+						do_escape(); break;
+					case ATTACK:
+						do_attack(); break;
+					case STOP:
+						do_stop(); break;
+					case GOTO:
+						do_goto(); break;
+					case GOTO_FLUX:
+						do_goto_flux(); break;
+					case GOTO_ENEMY: 
+						do_goto_enemy(); break;
+					case GOTO_ARCHON:
+						do_goto_archon(); break;
+					case GOTO_BLOCK:
+						do_goto_block(); break;
+				}
+			}
+			catch (Exception e) {
+				System.out.println("do_mission(): Exception: " + e);
 			}
 		}
 	}
@@ -196,7 +201,7 @@ public abstract class AbstractRobot {
 				
 				if (null != t.groundRobot && 
 						t.groundRobot.robot.getID() != rc.getRobot().getID()) {
-					if (rc.getTeam() != t.groundRobot.inf.team) 
+					if (!rc.getTeam().equals(t.groundRobot.inf.team))
 						enemies.add(t.groundRobot);
 					else
 						switch (t.groundRobot.inf.type) {
@@ -213,7 +218,7 @@ public abstract class AbstractRobot {
 
 				if (null != t.airRobot &&
 						t.airRobot.robot.getID() != rc.getRobot().getID()) {
-					if (rc.getTeam() != t.airRobot.inf.team) 
+					if (!rc.getTeam().equals(t.airRobot.inf.team))
 						enemies.add(t.airRobot);
 					else
 						switch (t.airRobot.inf.type) {
@@ -223,7 +228,6 @@ public abstract class AbstractRobot {
 								scouts.add(t.airRobot); break;
 						}
 				}
-
 			}
 		}	
 
@@ -255,11 +259,13 @@ public abstract class AbstractRobot {
 			for (Robot r : gr) {
 				try {
 					RobotInfo inf = rc.senseRobotInfo(r);
-					if (inf.team != rc.getTeam()) { enemies.add(new RInfo(r, inf)); continue; }
-					if (inf.type == RobotType.WORKER)       workers.add(new RInfo(r, inf));
-					if (inf.type == RobotType.CHANNELER) channelers.add(new RInfo(r, inf));
-					if (inf.type == RobotType.CANNON)       cannons.add(new RInfo(r, inf));
-					if (inf.type == RobotType.SOLDIER)     soldiers.add(new RInfo(r, inf));
+					if (!inf.team.equals(rc.getTeam()))     { enemies.add(new RInfo(r, inf)); continue; }
+					switch (inf.type) {
+						case WORKER:        workers.add(new RInfo(r, inf)); break;
+						case CHANNELER:  channelers.add(new RInfo(r, inf)); break;
+						case CANNON:        cannons.add(new RInfo(r, inf)); break;
+						case SOLDIER:      soldiers.add(new RInfo(r, inf)); break;
+					}
 				}
 				catch (Exception e) { }
 			}
@@ -270,9 +276,11 @@ public abstract class AbstractRobot {
 			for (Robot r : ar) {
 				try {
 					RobotInfo inf = rc.senseRobotInfo(r);
-					if (inf.team != rc.getTeam()) { enemies.add(new RInfo(r, inf)); continue; }
-					if (inf.type == RobotType.ARCHON) { archons.add(new RInfo(r, inf)); continue; }
-					if (inf.type == RobotType.SCOUT)     scouts.add(new RInfo(r, inf));
+					if (!inf.team.equals(rc.getTeam())) { enemies.add(new RInfo(r, inf)); continue; }
+					switch (inf.type) {
+						case ARCHON: archons.add(new RInfo(r, inf)); break;
+						case SCOUT:   scouts.add(new RInfo(r, inf)); break;
+					}
 				}
 				catch (Exception e) { }
 			}
@@ -289,7 +297,7 @@ public abstract class AbstractRobot {
 	{
 		if ((!rc.getLocation().isAdjacentTo(r.inf.location) &&
 					!rc.getLocation().equals(r.inf.location)) ||
-				rc.getTeam() != r.inf.team || 
+				!rc.getTeam().equals(r.inf.team) || 
 				r.inf.energonLevel > 0.7*r.inf.maxEnergon ||
 				rc.getEnergonLevel() < 0.4*rc.getMaxEnergonLevel())
 			return;
@@ -307,20 +315,39 @@ public abstract class AbstractRobot {
 		for (RInfo r : lr) transferEnergonTo(r);
 	}
 
+	public void stepTo2(MapLocation trg)
+	{
+		Direction d = rc.getLocation().directionTo(trg);
+		if (Direction.OMNI.equals(d) ||
+				Direction.NONE.equals(d)) return;
+		try {
+			for (int i = 0; i < 8 && !rc.canMove(d); ++i) d = d.rotateRight();
+			if (!rc.getDirection().equals(d)) {
+				//waitForMove();
+				rc.setDirection(d);
+				rc.yield();
+			}
+			//waitForMove();
+			rc.moveForward();
+			rc.yield();
+		}
+		catch (Exception e) { System.out.println("stepTo(): "+e); }
+	}
+
 	public void stepTo(MapLocation trg)
 	{
 		Direction d = rc.getLocation().directionTo(trg);
 
-		if ((rc.getLocation().getX() == trg.getX() && 
-					rc.getLocation().getY() == trg.getY()) ||
-				Direction.OMNI == d || Direction.NONE == d) return;
+		if (rc.getLocation().equals(trg) ||
+				Direction.OMNI.equals(d) || 
+				Direction.NONE.equals(d)) return;
 
 		boolean repeat = true;
 		while (repeat) {
 			try {
 				for (int i = 0; i < 8 && !rc.canMove(d); ++i) d = d.rotateRight();
 				
-				if (rc.getDirection() != d) {
+				if (!rc.getDirection().equals(d)) {
 					waitForMove();
 					rc.setDirection(d);
 				}
@@ -337,9 +364,7 @@ public abstract class AbstractRobot {
 
 	public void goTo(MapLocation trg)
 	{
-		while (
-				rc.getLocation().getX() != trg.getX() ||
-				rc.getLocation().getY() != trg.getY())
+		while (!rc.getLocation().equals(trg))
 			stepTo(trg);
 	}
 

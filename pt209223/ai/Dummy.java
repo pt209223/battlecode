@@ -10,17 +10,20 @@ public class Dummy extends AbstractRobot {
 		super(_rc);
 	}
 
-	public void run() throws GameActionException
+	public void run()
 	{
 		while (true) {
-			info("Jestem dummy");
+			try {
+				info("Jestem dummy");
+	
+				while (rc.isMovementActive()) rc.yield();
 
-			while (rc.isMovementActive()) rc.yield();
+				if (rc.canMove(rc.getDirection())) rc.moveForward();
+				else rc.setDirection(rc.getDirection().rotateRight());
 
-			if (rc.canMove(rc.getDirection())) rc.moveForward();
-			else rc.setDirection(rc.getDirection().rotateRight());
-
-			rc.yield();
+				rc.yield();
+			}
+			catch (Exception e) { }
 		}
 	}
 

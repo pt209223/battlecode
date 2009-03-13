@@ -10,7 +10,7 @@ public class Scout extends AbstractRobot {
 		super(_rc);
 	}
 
-	public void run() throws GameActionException
+	public void run()
 	{}
 
 }

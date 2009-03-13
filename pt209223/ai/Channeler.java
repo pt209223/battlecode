@@ -2,7 +2,7 @@ package pt209223.ai;
 
 import battlecode.common.*;
 import static battlecode.common.GameConstants.*;
-import static pt209223.communication.Radio.*;
+import pt209223.communication.*;
 
 public class Channeler extends AbstractRobot {
 	private MapLocation archon;
@@ -17,20 +17,22 @@ public class Channeler extends AbstractRobot {
 		drainDelay = 0;
 	}
 
-	public void run() throws GameActionException
+	public void run()
 	{
 		info("Czekam na 'HELLO' od Archona...");
 
 		while (true) {
 			radio.receive();
 			Message msg = radio.get();
-			if (null == msg) continue;
-			if (MSG_TYPE_HELLO != msg.ints[MSG_IDX_TYPE]) continue;
+			if (null == msg) continue; // Moze byc przestarzala
+			if (Radio.HELLO != msg.ints[Radio.TYPE]) continue;
 			
-			if (!rc.getLocation().isAdjacentTo(msg.locations[MSG_HELLO_L_SENDER])) 
+			if (!rc.getLocation().isAdjacentTo(msg.locations[Radio.HELLO_SENDER])) 
+				continue;
+			if (!RobotType.valueOf(msg.strings[Radio.HELLO_SENDER_TYPE]).equals(RobotType.ARCHON))
 				continue;
 			
-			archon = msg.locations[MSG_HELLO_L_SENDER];
+			archon = msg.locations[Radio.HELLO_SENDER];
 			break;
 		}
 
@@ -44,12 +46,12 @@ public class Channeler extends AbstractRobot {
 			while (true) {
 				Message msg = radio.get();
 				if (null == msg) break;
-				if (MSG_TYPE_ENEMIES != msg.ints[MSG_IDX_TYPE]) continue;
+				if (Radio.ENEMIES != msg.ints[Radio.TYPE]) continue;
 				
-				int it_i = MSG_ENEMIES_I_ENEMIES_START;
-				int it_l = MSG_ENEMIES_L_ENEMIES_START;
-				int it_s = MSG_ENEMIES_S_ENEMIES_START;
-				int i = 0, n = msg.ints[MSG_ENEMIES_I_SIZE];
+				int it_i = Radio.ENEMIES_I_START;
+				int it_l = Radio.ENEMIES_L_START;
+				int it_s = Radio.ENEMIES_S_START;
+				int i = 0, n = msg.ints[Radio.ENEMIES_SIZE];
 
 				while (i < n) {
 					int len = archon.distanceSquaredTo(msg.locations[it_l]);
@@ -79,9 +81,9 @@ public class Channeler extends AbstractRobot {
 
 			Direction dir = rc.getLocation().directionTo(archon);
 
-			if (Direction.NONE == dir) { 
+			if (Direction.NONE.equals(dir)) { 
 				info("Nie wiem gdzie jest Archon :(");
-			} else if (Direction.OMNI == dir) { 
+			} else if (Direction.OMNI.equals(dir)) { 
 				info("Jestem pod Archonem, odejde na bok...");
 				try { rc.moveForward(); }
 				catch (Exception e) { 
@@ -90,7 +92,7 @@ public class Channeler extends AbstractRobot {
 			} else if (rc.getLocation().isAdjacentTo(archon)) {
 				try {
 					dir = dir.rotateRight();
-					if (rc.getDirection() != dir) rc.setDirection(dir);
+					if (!rc.getDirection().equals(dir)) rc.setDirection(dir);
 					waitForMove(); 
 					rc.moveForward();
 					rc.yield();
