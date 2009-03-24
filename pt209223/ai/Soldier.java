@@ -15,6 +15,7 @@ public class Soldier extends AbstractRobot {
 	protected MapLocation nearest;
 	protected boolean nearestIsAir;
 	protected int lastSeen;
+	protected MapLocation channeler;
 
 	public Soldier(RobotController _rc)
 	{
@@ -24,6 +25,7 @@ public class Soldier extends AbstractRobot {
 		nearest = null;
 		nearestIsAir = false;
 		lastSeen = 0;
+		channeler = null;
 	}
 
 	public void run()
@@ -176,11 +178,17 @@ public class Soldier extends AbstractRobot {
 
 				}
 			} else { // Daleko jest wrog.
-				stepWarily(nearest);
+				if (null == channeler || rc.getLocation().distanceSquaredTo(channeler) > 13)
+					stepWarily(nearest); // troche nachamowo wyliczylem te 13,6... :P
+				else if (null != channeler && rc.getLocation().distanceSquaredTo(channeler) < 6)
+					stepWarily(nearest); // atak jesli juz... trzeba...
 			}
 		} else if (!rc.getLocation().isAdjacentTo(nearest)) {
 			// Jak jestesmy daleko...
-			stepWarily(nearest);
+			if (null == channeler || rc.getLocation().distanceSquaredTo(channeler) > 13)
+				stepWarily(nearest); // troche nachamowo wyliczylem te 13,6... :P
+			else if (null != channeler && rc.getLocation().distanceSquaredTo(channeler) < 6)
+				try { rc.moveBackward(); rc.yield(); } catch (Exception e) { }
 		}
 
 		int rd = -1;
@@ -299,6 +307,8 @@ public class Soldier extends AbstractRobot {
 		int p_lastSeen = lastSeen;
 		lastSeen = Clock.getRoundNum();
 		nearest = null;
+		channeler = null;
+		int channeler_min = INFINITY;
 		
 		int min = INFINITY;
 		double energon = INFINITY;
@@ -312,6 +322,11 @@ public class Soldier extends AbstractRobot {
 					energon = r.inf.energonLevel;
 					nearestIsAir = r.inf.type.isAirborne();
 				}
+				if (r.inf.type.equals(RobotType.CHANNELER) && 
+						(null == channeler || len < channeler_min)) {
+					channeler = r.inf.location;
+					channeler_min = len;
+				}
 			}
 		}
 
@@ -324,11 +339,14 @@ public class Soldier extends AbstractRobot {
 					energon = r.energon;
 					nearestIsAir = r.type.isAirborne();
 				}
+				if (r.type.equals(RobotType.CHANNELER) && 
+						(null == channeler || len < channeler_min)) {
+					channeler = r.location;
+					channeler_min = len;
+				}
 			}
 		}
 
-		// TODO : Uwaga na channelera
-		
 		if (null == nearest && p_lastSeen + 5 > lastSeen) {
 			nearest = p_nearest;
 			nearestIsAir = p_nearestIsAir;

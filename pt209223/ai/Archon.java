@@ -53,6 +53,18 @@ public class Archon extends AbstractRobot {
 		countdown = 0;
 	}
 
+	// Dodawanie informacji co robot robi.
+	public void info(String descr)
+	{
+		for (int i = 1; i < infos.length; ++i)
+			infos[i-1] = infos[i];
+
+		infos[infos.length - 1] = Clock.getRoundNum() + "@" + mission + ": " + descr;
+
+		for (int i = 0; i < infos.length; ++i)
+			rc.setIndicatorString(i, infos[i]);
+	}
+
 	public void run() 
 	{
 		while (true) {
@@ -129,8 +141,24 @@ public class Archon extends AbstractRobot {
 			return;
 		}
 
-		if ( soldiers.size() <  2*soldierArmy ) spawn(RobotType.SOLDIER);
-		if ( cannons.size()  <  1*cannonArmy  ) spawn(RobotType.CANNON);
+		if (rc.getEnergonLevel() < 0.4*rc.getMaxEnergonLevel() &&
+				soldiers.isEmpty() && cannons.isEmpty()) {
+			mission = Mission.ESCAPE;
+			return;
+		}
+
+		boolean hasChanneler = false;
+		if (!enemies.isEmpty())
+			for (RInfo r : enemies) 
+				if (r.inf.type.equals(RobotType.CHANNELER)) { hasChanneler = true; break; }
+
+		if (hasChanneler) {
+			info("Ma Channelera, wybuduje Cannona");
+			if ( cannons.size()  <  1*cannonArmy  ) spawn(RobotType.CANNON);
+		} else {
+			if ( soldiers.size() <  2*soldierArmy ) spawn(RobotType.SOLDIER);
+			if ( cannons.size()  <  1*cannonArmy  ) spawn(RobotType.CANNON);
+		}
 
 		transferEnergonTo(soldiers);
 		transferEnergonTo(cannons);
@@ -155,7 +183,8 @@ public class Archon extends AbstractRobot {
 					rc.yield();
 				}
 			}
-		}
+		} else 
+			rc.yield();
 	}
 
 	public void findStairs()
@@ -196,7 +225,21 @@ public class Archon extends AbstractRobot {
 		countdown = 50;
 
 		fastScan();
-		
+	
+		if (!enemies.isEmpty()) {
+			boolean toEscape = false;
+			for (RInfo r : enemies) {
+				if (r.inf.type.equals(RobotType.CANNON)) { 
+					if ((soldiers.isEmpty() || rc.getEnergonLevel() < 0.2*rc.getMaxEnergonLevel()) &&
+							rc.getLocation().distanceSquaredTo(r.inf.location) <= 25) { toEscape = true; break; }
+				} else if (r.inf.type.equals(RobotType.SOLDIER)) {
+					if ((soldiers.isEmpty() && rc.getEnergonLevel() < 0.3*rc.getMaxEnergonLevel()) &&
+							rc.getLocation().distanceSquaredTo(r.inf.location) <= 9) {	toEscape = true; break; }
+				}
+			}
+			if (toEscape) { mission = Mission.ESCAPE; return; }
+		}
+
 		transferEnergonTo(soldiers);
 		transferEnergonTo(cannons);
 
@@ -206,9 +249,12 @@ public class Archon extends AbstractRobot {
 		// listen ();
 
 		if (cannons.size() >= cannonArmy && soldiers.size() >= soldierArmy) {
+			info("A teraz czas na atak");
 			/*if (countdown > 0) --countdown;
 			else*/ mission = Mission.ATTACK;
 		}
+
+		rc.yield();
 	}
 
 	public void do_use_flux() throws GameActionException
@@ -422,6 +468,9 @@ public class Archon extends AbstractRobot {
 	public boolean spawn(RobotType t)
 	{
 		if (canSpawnThat(t)) {
+
+			// TODO : to mozna troche efektywniej napisac
+			
 			try { 
 				Direction d = rc.getDirection();
 				if (RobotType.SCOUT.equals(t)) {

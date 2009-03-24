@@ -217,10 +217,10 @@ public class Cannon extends AbstractRobot{
 	{
 		MapLocation p_nearest = nearest;
 		boolean p_nearestIsAir = nearestIsAir;
+		int p_lastSeen = lastSeen;
+		lastSeen = Clock.getRoundNum();
 		nearest = null;
 		
-		if (e1.isEmpty() && e2.isEmpty()) return;
-
 		int min = INFINITY;
 		double energon = INFINITY;
 		MapLocation ch_loc = null, ca_loc = null, ar_loc = null;
@@ -290,20 +290,11 @@ public class Cannon extends AbstractRobot{
 		else if (ca_loc != null) { nearest = ca_loc; min = ca_min; nearestIsAir = false; }
 		else if (ar_loc != null) { nearest = ar_loc; min = ar_min; nearestIsAir = true; }
 
-		/*if (nearest != null) countdown = 0;
-		else {
-			if (countdown < 1) { 
-				++countdown;
-				nearest = p_nearest;
-				nearestIsAir = p_nearestIsAir;
-			}
-		}*/
-
-		// TODO : Uwaga na channelera
+		if (null == nearest && p_lastSeen + 1 >= lastSeen) {
+			nearest = p_nearest;
+			nearestIsAir = p_nearestIsAir;
+			lastSeen = p_lastSeen;
+		}
 	}
-
-
-
-
 
 }
