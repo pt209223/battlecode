@@ -7,15 +7,30 @@ import pt209223.navigation.*;
 import pt209223.communication.*;
 
 public class Archon extends AbstractRobot {
-	private LinkedList<MapLocation> fluxKnown;
-	private LinkedList<MapLocation> fluxTaken;
-	private LinkedList<MapLocation> fluxEnemy;
-	private LinkedList<MapLocation> stairs;
+	/*
+	 * Archon o najwyzszym ID jest liderem.
+	 * 
+	 * ...
+	 */
 
-	private int lastBroadcast;
-	private int lastEnemiesNoticed;
-	private MapLocation target;
-	private boolean immediatelySend;
+	enum Strategy { ECONOMY, FIGTH };
+
+	private LinkedList<MapLocation> fluxKnown;  // lista znanych fluxow
+	private LinkedList<MapLocation> fluxTaken;  // lista moich fluxow
+	private LinkedList<MapLocation> fluxEnemy;  // lista przeciwnika fluxow
+	private LinkedList<MapLocation> fluxSpent;  // lista zuzytych fluxow
+	private LinkedList<MapLocation> stairs;     // lista schodkow(dla Workera)
+
+	private boolean fluxDetected;
+	private int lastBroadcast;                  // kiedy byl poprzedni broadcast
+	private int lastEnemiesNoticed;             // kiedy ostatnio widziano wroga
+	private MapLocation target;                 // obrany cel
+	private boolean immediatelySend;            // wyslij broadcast natychmiast
+	private boolean amILeader;                  // czy jestem liderem?
+	private Strategy strategy;                  // obrana strategia
+	private int soldierArmy;                    // licznosc armi soldierow
+	private int cannonArmy;                     // licznosc armi cannonow
+	private int countdown;
 
 	public Archon(RobotController _rc) 
 	{
@@ -23,97 +38,186 @@ public class Archon extends AbstractRobot {
 		fluxKnown = new LinkedList<MapLocation>();
 		fluxTaken = new LinkedList<MapLocation>();
 		fluxEnemy = new LinkedList<MapLocation>();
+		fluxSpent = new LinkedList<MapLocation>();
+		fluxDetected = false;
 		stairs = new LinkedList<MapLocation>();
 		lastBroadcast = 0;
 		lastEnemiesNoticed = 0;
 		target = null;
 		immediatelySend = false;
+		amILeader = false;
+		strategy = Strategy.ECONOMY;
+		mission = Mission.FIND_FLUX;
+		soldierArmy = 2;
+		cannonArmy = 1;
+		countdown = 0;
 	}
 
 	public void run() 
 	{
-		info("Szukam fluxa...");
-		mission = Mission.GOTO_FLUX;	
-		do_mission();
+		while (true) {
+			try {
+				switch (mission) {
+					case FIND_FLUX:   do_find_flux();  break; // Szukaj fluxa
+					case USE_FLUX:    do_use_flux();   break; // Wydobywaj fluxa
+					case ESCAPE:      do_escape();     break; // Ucieczka :P
+					case FIND_ENEMY:  do_find_enemy(); break; // Znajdz wroga
+					case PREPARE:     do_prepare();    break; // Przygotuj sie 
+					case ATTACK:      do_attack();     break; // Attaakckkk!
+					default:
+						System.out.println("Nieoczekiwana misja: "+mission);
+				}
+			}
+			catch (Exception e) { }
+		}
 	}
 
 	public void do_escape() throws GameActionException
 	{
-		try {
-			fastScan();
-			
-			if (enemies.isEmpty()) mission = Mission.GOTO_FLUX;
-			else {
-				ListIterator<RInfo> it = enemies.listIterator();
-				MapLocation loc = it.next().inf.location;
-				while (it.hasNext()) {
-					MapLocation next = it.next().inf.location;
-					loc = new MapLocation(loc.getX()+next.getX(), loc.getY()+next.getY());
-				}
-				Direction d = rc.getLocation().directionTo(loc).opposite();
+		fastScan(); // tylko szybki scan.
 
-				if (!rc.canMove(d)) {
-					if (rc.canMove(d.rotateRight())) d = d.rotateRight();
-					else if (rc.canMove(d.rotateLeft())) d = d.rotateLeft();
-					else if (rc.canMove(d.rotateRight().rotateRight())) d = d.rotateRight().rotateRight();
-					else {
-						for (int i = 0; i < 5; ++i) {
-							d = d.rotateRight();
-							if (rc.canMove(d)) break;
-						}
+		if (enemies.isEmpty()) {
+			// TODO: Moze warto byloby wracac do ktorego wlasnego fluxa
+			mission = Mission.PREPARE;
+		} else {
+			// Wybieramy droge ucieczki.
+			// TODO: Czasem uciekajacy Archon grzeznie w rogu planszy.
+				
+			ListIterator<RInfo> it = enemies.listIterator();
+			MapLocation loc = it.next().inf.location;
+			while (it.hasNext()) {
+				MapLocation next = it.next().inf.location;
+				loc = new MapLocation(loc.getX()+next.getX(), loc.getY()+next.getY());
+			}
+			Direction d = rc.getLocation().directionTo(loc).opposite();
+
+			if (!rc.canMove(d)) {
+				if (rc.canMove(d.rotateRight())) d = d.rotateRight();
+				else if (rc.canMove(d.rotateLeft())) d = d.rotateLeft();
+				else if (rc.canMove(d.rotateRight().rotateRight())) d = d.rotateRight().rotateRight();
+				else {
+					for (int i = 0; i < 5; ++i) { 
+						d = d.rotateRight(); 
+						if (rc.canMove(d)) break; 
 					}
 				}
+			}
 				
-				info("Uciekam: " + d);
+			info("Uciekam: " + d);
 
+			waitForMove();
+				
+			if (rc.getDirection().equals(d)) rc.moveForward(); 
+			else if (rc.getDirection().equals(d.opposite())) rc.moveBackward();
+			else {
+				rc.setDirection(d);
 				waitForMove();
-				
-				if (rc.getDirection().equals(d)) { 
-					rc.moveForward(); 
-				} else if (rc.getDirection().equals(d.opposite())) {
-					rc.moveBackward(); rc.yield();
-				} else {
-					rc.setDirection(d);
-					waitForMove();
-					rc.moveForward();
+				rc.moveForward();
+			}
+
+			rc.yield();
+		}
+
+	}
+
+	public void do_attack() throws GameActionException
+	{
+		fastScan();
+
+		if (rc.getEnergonLevel() < 0.2*rc.getMaxEnergonLevel()) {
+			mission = Mission.ESCAPE;
+			return;
+		}
+
+		if ( soldiers.size() <  2*soldierArmy ) spawn(RobotType.SOLDIER);
+		if ( cannons.size()  <  1*cannonArmy  ) spawn(RobotType.CANNON);
+
+		transferEnergonTo(soldiers);
+		transferEnergonTo(cannons);
+
+		talk();
+
+		if (enemies.isEmpty()) {
+			Direction fluxDir = getDirectionToFlux();
+			if (Direction.OMNI.equals(fluxDir)) {
+					mission = Mission.USE_FLUX; 
+				radio.sayFluxTaken();
+				findStairs();
+				immediatelySend = true;
+			} else {
+				if (Direction.NONE.equals(fluxDir)) 
+					fluxDir = rc.senseDirectionToOwnedFluxDeposit();
+
+				if (!rc.isMovementActive() && !rc.hasActionSet()) {
+					if (rc.canMove(fluxDir) && !rc.getDirection().equals(fluxDir)) rc.setDirection(fluxDir);
+					else if (rc.canMove(rc.getDirection())) rc.moveForward();
+					else rc.setDirection(rc.getDirection().rotateRight());
+					rc.yield();
 				}
-
-				rc.yield();
 			}
 		}
-		catch (Exception e) { }
 	}
 
-	public void do_attack() 
+	public void findStairs()
 	{
-		try { 
-			fastScan();
+		expensiveScan();
+		stairs.clear();
+		stairs.addFirst(rc.getLocation());
+		TInfo curr = getFromMap(rc.getLocation());
+		
+		String is = "Schody :";
 
-			if (rc.getEnergonLevel() < 0.39*rc.getMaxEnergonLevel()) {
-				mission = Mission.ESCAPE;
-				return;
+		while (null != curr &&  stairs.size() < 3) {
+			Direction d = Direction.WEST;
+			TInfo best = null;
+			int h = curr.height + curr.blocks;
+			
+			for (int i = 0; i < 8; ++i) {
+				if (stairs.contains(curr.loc.add(d))) continue;
+				TInfo next = getFromMap(curr.loc.add(d));
+				if (null == next) continue;
+				int nh = next.height + next.blocks;
+				if (null == best || nh > h) { h = nh; best = next; }
+				d = d.rotateRight();
 			}
 
-			if (soldiers.size() <  3 * (1 + archons.size()/2)) {
-				spawn(RobotType.SOLDIER);
-				info("Tworze Soldiera...");
-			}
+			if (null == best || h == 0) break;
 
-			if (cannons.size() < 1 * (1 + archons.size()/2)) {
-				spawn(RobotType.CANNON);
-				info("Tworze Cannona...");
-			}
-
-			transferEnergonTo(soldiers);
-			transferEnergonTo(cannons);
-
-			talk();
+			is += (" " + curr.loc.directionTo(best.loc));
+			stairs.addFirst(best.loc);
+			curr = best;
 		}
-		catch (Exception e) { }
+
+		info(is);
 	}
 
-	public void do_stop() throws GameActionException
+	public void do_prepare() throws GameActionException
 	{
+		countdown = 50;
+
+		fastScan();
+		
+		transferEnergonTo(soldiers);
+		transferEnergonTo(cannons);
+
+		if ( cannons.size()  <  cannonArmy  ) spawn(RobotType.CANNON);
+		if ( soldiers.size() <  soldierArmy ) spawn(RobotType.SOLDIER);
+	
+		// listen ();
+
+		if (cannons.size() >= cannonArmy && soldiers.size() >= soldierArmy) {
+			/*if (countdown > 0) --countdown;
+			else*/ mission = Mission.ATTACK;
+		}
+	}
+
+	public void do_use_flux() throws GameActionException
+	{
+		/*
+		 * TODO: Postarac sie aby wysylac jedynie mozliwie 
+		 * najaktualniejsze dane. Glownie chodzi o pozycje
+		 * wroga. Szczegolnie wazne jest to dla Cannona.
+		 */
 		fastScan();
 
 		transferEnergonTo(workers);
@@ -123,56 +227,79 @@ public class Archon extends AbstractRobot {
 		transferEnergonTo(scouts);
 
 		listen ();
-		talk   ();
 	
 		if (enemies.isEmpty()) {
-			if (workers.isEmpty()) {
-				spawn(RobotType.WORKER);
-				info("Tworze Workera...");
-				radio.sayStairs(stairs);
-				immediatelySend = true;
+			if (workers.size() < 1) {
+				if (spawn(RobotType.WORKER))
+					radio.sayStairs(stairs);
 			}
 
 			if (channelers.isEmpty()) { 
-				spawn(RobotType.CHANNELER);
-				info("Tworze Channlera...");
+				if (spawn(RobotType.CHANNELER))
+					radio.sayHello();
+			}
+
+			if (soldiers.size() < soldierArmy) {
+				if (spawn(RobotType.SOLDIER))
+					radio.sayHello();
+			}
+
+			if (cannons.size() < cannonArmy) {
+				if (spawn(RobotType.CANNON)) 
+					radio.sayHello();
 			}
 
 		} else {
 			if (rc.getEnergonLevel() < 0.5*rc.getMaxEnergonLevel() &&
-					channelers.isEmpty()) {
+					channelers.isEmpty() && soldiers.isEmpty()) {
 				info("Atakuja... ratunku...");
 				mission = Mission.ESCAPE; return; 
 			}
 
-			if (soldiers.size() < 3*(1 + archons.size()/2)) {
-				spawn(RobotType.SOLDIER);
-				info("Tworze Soldiera...");
+			if (cannons.size() < 1) {
+				if (spawn(RobotType.CANNON))
+					radio.sayHello();
 			}
 
+			target = chooseTarget();
+			radio.sayEnemies(enemies);
+			radio.sayAttack(target);
 		}
 
-		//...
+		if (radio.isOutgoing()) radio.broadcast();
+
+		waitForMove();
 	}
 
-	public void do_goto_flux() throws GameActionException
+	public void do_find_enemy()
 	{
+		// Do zmiany
+		mission = Mission.FIND_FLUX;
+	}
+
+	public void do_find_flux() throws GameActionException
+	{
+		/*
+		 * TODO: Rozpoznawanie istniejacych schodow. 
+		 * Nie bedzie to trudne.
+		 */
+
 		fastScan();
 		listen();
-		talk();
 	
 		if (!enemies.isEmpty()) { 
-			info("ATTAACKCKK!!");
-			mission = Mission.ATTACK; 
+			mission = Mission.ESCAPE; 
+			radio.sayEnemies(enemies);
+			radio.broadcast();
 			return; 
 		}
 
-		Direction fluxDir = rc.senseDirectionToUnownedFluxDeposit();
+		// Trzeba zmienic :
+		Direction fluxDir = getDirectionToFlux();
 
 		if (Direction.OMNI.equals(fluxDir)) {
-			stairs.clear();
-			stairs.add(rc.getLocation());
-			mission = Mission.STOP;
+			findStairs();
+			mission = Mission.USE_FLUX; 
 			radio.sayFluxTaken();
 			immediatelySend = true;
 		} else {
@@ -206,6 +333,7 @@ public class Archon extends AbstractRobot {
 					info(
 							"Archon z " + msg.locations[Radio.FLUX_FOUND_SENDER] + 
 							" znalazl Flux na " + msg.locations[Radio.FLUX_FOUND_FOUND]);
+					//if (rc.getRobot().getID() < );
 					break;
 				case Radio.FLUX_TAKEN:
 					info(
@@ -323,5 +451,25 @@ public class Archon extends AbstractRobot {
 		
 		return false;
 	}
+	
+	public Direction getDirectionToFlux()
+	{
+		Direction toNearest = rc.senseDirectionToUnownedFluxDeposit();
+		return toNearest;
+/*		FluxDeposit[] fds = rc.senseNearbyFluxDeposits();
+		
+		if (null != fds && fds.length > 0) {
+			// Milczaco zakladam z
+			if (!fluxDetected) {
+				radio.sayFluxFound(fds
+			}
+
+			fluxDetected = true;
+		} else {
+			fluxDetected = false;
+	}*/
+		
+	}
+
 
 }

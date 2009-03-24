@@ -7,6 +7,7 @@ public class RInfo {
 	public Robot robot;
 	public RobotInfo inf;
 
+
 	public RInfo(Robot _robot, RobotInfo _inf)
 	{
 		robot = _robot;

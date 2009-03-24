@@ -14,7 +14,7 @@ public class Radio {
 	protected int intsTotalLength;                  // liczba pozycji w ints[] do wyslania
 	protected int locationsTotalLength;             // liczba pozycji w locations[] do wyslania
 	protected int stringsTotalLength;               // liczba pozycji w strings[] do wyslania
-	protected static final boolean verbose = true;  // Czy wypisywac rozne takie informacje
+	protected static final boolean verbose = false; // Czy wypisywac rozne takie informacje
 
 	/* 
 	 * Do uzytku wewnetrznego dla Radio 
@@ -74,7 +74,7 @@ public class Radio {
 	public static final int GOTO        = 4; // Idz, bez dyskusyjnie, tam
 	public static final int STAIRS      = 5; // Pozycje schodow (Archon<->Worker)
 	public static final int ATTACK      = 6; // Gdzie isc atakowac
-	//public static final int MAP         = 5; // Informacje o mapie
+	//public static final int MAP         = 7; // Informacje o mapie
 	// ... ?
 
 	/* 

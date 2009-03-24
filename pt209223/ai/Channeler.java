@@ -3,8 +3,14 @@ package pt209223.ai;
 import battlecode.common.*;
 import static battlecode.common.GameConstants.*;
 import pt209223.communication.*;
+import pt209223.navigation.*;
+import static pt209223.navigation.Constants.*;
 
 public class Channeler extends AbstractRobot {
+	/*
+	 * Channeler nie robi nic skomplikowanego. Krazy sobie wokol 
+	 * Archona i drain-uje gdy zauwazy, ze wrog jest w polu razenia.
+	 */
 	private MapLocation archon;
 	private int drainRounds;
 	private int drainDelay;
@@ -28,20 +34,19 @@ public class Channeler extends AbstractRobot {
 			if (Radio.HELLO != msg.ints[Radio.TYPE]) continue;
 			
 			if (!rc.getLocation().isAdjacentTo(msg.locations[Radio.HELLO_SENDER])) 
-				continue;
+				continue; // Ignorujemy odlegle Archony
 			if (!RobotType.valueOf(msg.strings[Radio.HELLO_SENDER_TYPE]).equals(RobotType.ARCHON))
-				continue;
+				continue; // Ignorujemy wiadomosci od innych jednostek niz Archon
 			
 			archon = msg.locations[Radio.HELLO_SENDER];
-			break;
+			break; // Ok...
 		}
 
 		info("Ok, pokrece sie wokol Archona...");
 
 		while (true) {
 			radio.receive();
-
-			int min = 100;
+			int min = INFINITY;
 
 			while (true) {
 				Message msg = radio.get();

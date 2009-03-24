@@ -13,7 +13,18 @@ import pt209223.communication.*;
 
 public abstract class AbstractRobot {
 	public enum Mission {
-		NONE, RANDOM, ESCAPE, ATTACK, GOTO, GOTO_FLUX, GOTO_ENEMY, GOTO_ARCHON, GOTO_BLOCK, STOP;
+		WAIT,             // - Oczekiwanie
+		EXPLORE,          // - Przeszukanie terenu
+		ESCAPE,           // - Ucieczka
+		ATTACK,           // - Atak
+		PREPARE,          // - Przygotowania
+		FIND_FLUX,        // - Szukanie fluxa
+		USE_FLUX,         // - Uzytkowanie fluxa
+		FIND_ENEMY,       // - Szukanie wroga
+		FOLLOW,           // - Podazaj za
+		FIND_BLOCK,       // - Szukanie bloka
+		BRING_BLOCK,      // - Sprowadzenie blocka
+		GO_BACK           // - Powrot
 	};
 
 	protected final RobotController rc;  // Kontroler     //
@@ -43,7 +54,7 @@ public abstract class AbstractRobot {
 		rand.setSeed(rc.getRobot().getID());
 		infos = new String[GameConstants.NUMBER_OF_INDICATOR_STRINGS];
 		radio = new Radio(_rc);
-		mission = Mission.NONE;
+		mission = Mission.WAIT;
 		map = new HashMap<MapLocation, TInfo>();
 		enemies = new ArrayList<RInfo>();
 		archons = new ArrayList<RInfo>();
@@ -59,69 +70,6 @@ public abstract class AbstractRobot {
 	// Kazdy robot ma miec zdefiniowane co ma robic.
 	abstract public void run();
 
-	public void do_mission()
-	{
-		while (true) {
-			try {
-				switch (mission) {
-					case NONE:
-						do_none(); break;
-					case RANDOM:
-						do_random(); break;
-					case ESCAPE:
-						do_escape(); break;
-					case ATTACK:
-						do_attack(); break;
-					case STOP:
-						do_stop(); break;
-					case GOTO:
-						do_goto(); break;
-					case GOTO_FLUX:
-						do_goto_flux(); break;
-					case GOTO_ENEMY: 
-						do_goto_enemy(); break;
-					case GOTO_ARCHON:
-						do_goto_archon(); break;
-					case GOTO_BLOCK:
-						do_goto_block(); break;
-				}
-			}
-			catch (Exception e) {
-				System.out.println("do_mission(): Exception: " + e);
-			}
-		}
-	}
-
-	public void do_none() throws GameActionException 
-	{ info("DO_NONE()"); }
-	
-	public void do_random() throws GameActionException 
-	{ info("DO_RANDOM()"); }
-	
-	public void do_escape() throws GameActionException 
-	{ info("DO_ESCAPE()"); }
-	
-	public void do_attack() throws GameActionException
-	{ info("DO_ATTACK()"); }
-
-	public void do_stop() throws GameActionException 
-	{ info("DO_STOP()"); }
-	
-	public void do_goto() throws GameActionException 
-	{ info("DO_GOTO()"); }
-	
-	public void do_goto_flux() throws GameActionException 
-	{ info("DO_GOTO_FLUX()"); }
-	
-	public void do_goto_enemy() throws GameActionException 
-	{ info("DO_GOTO_ENEMY()"); } 
-	
-	public void do_goto_archon() throws GameActionException 
-	{ info("DO_GOTO_ARCHON()"); }
-	
-	public void do_goto_block() throws GameActionException 
-	{ info("DO_GOTO_BLOCK()"); }
-
 	// Dodawanie informacji co robot robi.
 	public void info(String descr)
 	{
@@ -134,6 +82,7 @@ public abstract class AbstractRobot {
 			rc.setIndicatorString(i, infos[i]);
 	}
 
+	// Poczekaj az bedzie mozna zrobic ruch
 	public void waitForMove()
 	{
 		while (rc.isMovementActive() ||
@@ -141,6 +90,7 @@ public abstract class AbstractRobot {
 			rc.yield();
 	}
 
+	// Poczekaj az bedzoe mozna atakowac
 	public void waitForAttack()
 	{
 		while (rc.isAttackActive() ||
@@ -148,18 +98,52 @@ public abstract class AbstractRobot {
 			rc.yield();
 	}
 
+	// Czy mozna wykonac ruch teraz?
 	public boolean canMove(Direction d)
 	{
 		return 
 			rc.canMove(d) && !rc.isMovementActive() && rc.getRoundsUntilMovementIdle() == 0;
 	}
 
+	// Czy mozna atakowac teraz?
 	public boolean canAttack(MapLocation l)
 	{
 		return
 			rc.canAttackSquare(l) && !rc.isAttackActive() && rc.getRoundsUntilAttackIdle() == 0;
 	}
 
+	// Idz, ale ostrozni i z uwaga
+	public void stepWarily(MapLocation loc) 
+	{
+		try { 
+			if (!rc.isMovementActive()) { // Moge robic ruch
+				Direction d = rc.getLocation().directionTo(loc);
+				if (d.equals(Direction.OMNI)) return;
+
+				int n = 0;
+				while (n < 8) {
+					if (rc.canMove(d)) break;
+					d = d.rotateRight();
+					++n;
+				}
+
+				if (8 == n) { rc.yield(); return; }
+
+				if (!rc.getDirection().equals(d)) {
+					rc.setDirection(d);
+					rc.yield();
+				}
+
+				if (rc.canMove(d)) {
+					rc.moveForward();
+					rc.yield();
+				}
+			}
+		}
+		catch (Exception e) { }
+	}
+
+	// Kosztowny skan, skanuje teraz, roboty, ...
 	public void expensiveScan()
 	{
 		enemies.clear();
@@ -239,7 +223,7 @@ public abstract class AbstractRobot {
 		lastScan = lastExpensiveScan = Clock.getRoundNum();
 	}
 
-
+	// Szybki skan okolicy (tylko pobliskie roboty)
 	public void fastScan()
 	{
 		enemies.clear();
@@ -293,6 +277,7 @@ public abstract class AbstractRobot {
 		lastScan = Clock.getRoundNum();
 	}
 
+	// Transer energonu do robota r
 	public void transferEnergonTo(RInfo r)
 	{
 		if ((!rc.getLocation().isAdjacentTo(r.inf.location) &&
@@ -310,30 +295,13 @@ public abstract class AbstractRobot {
 		catch (Exception e) { }
 	}
 
+	// Transfer energonu do kazdego robota z listy lr
 	public void transferEnergonTo(List<RInfo> lr)
 	{
 		for (RInfo r : lr) transferEnergonTo(r);
 	}
 
-	public void stepTo2(MapLocation trg)
-	{
-		Direction d = rc.getLocation().directionTo(trg);
-		if (Direction.OMNI.equals(d) ||
-				Direction.NONE.equals(d)) return;
-		try {
-			for (int i = 0; i < 8 && !rc.canMove(d); ++i) d = d.rotateRight();
-			if (!rc.getDirection().equals(d)) {
-				//waitForMove();
-				rc.setDirection(d);
-				rc.yield();
-			}
-			//waitForMove();
-			rc.moveForward();
-			rc.yield();
-		}
-		catch (Exception e) { System.out.println("stepTo(): "+e); }
-	}
-
+	// Wykonaj ruch do trg
 	public void stepTo(MapLocation trg)
 	{
 		Direction d = rc.getLocation().directionTo(trg);
@@ -362,12 +330,14 @@ public abstract class AbstractRobot {
 		}
 	}
 
+	// Idz do trg
 	public void goTo(MapLocation trg)
 	{
 		while (!rc.getLocation().equals(trg))
 			stepTo(trg);
 	}
 
+	// Odczytaj z mapy
 	public TInfo getFromMap(MapLocation loc)
 	{
 		TInfo t = map.get(loc);
@@ -385,6 +355,7 @@ public abstract class AbstractRobot {
 		return null;
 	}
 
+	// Zaktualizuj mape
 	public TInfo updateOnMap(MapLocation loc)
 	{
 		TInfo t = map.get(loc);
@@ -405,5 +376,5 @@ public abstract class AbstractRobot {
 		return t;
 	}
 
-
 }
+

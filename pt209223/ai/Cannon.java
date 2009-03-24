@@ -5,88 +5,305 @@ import static battlecode.common.GameConstants.*;
 
 import pt209223.navigation.*;
 import pt209223.communication.*;
+import static pt209223.navigation.Constants.*;
+
+import java.util.*;
 
 public class Cannon extends AbstractRobot{
-	private MapLocation archon;
+	protected MapLocation target;
+	protected MapLocation archon;
+	protected MapLocation nearest;
+	protected boolean nearestIsAir;
+	protected int lastSeen;
+	protected int countdown;
 
 	public Cannon(RobotController _rc)
 	{
 		super(_rc);
+		target = null;
 		archon = null;
+		nearest = null;
+		nearestIsAir = false;
+		lastSeen = 0;
+		countdown = 0;
 	}
 
 	public void run()
 	{
-		radio.receive();
+		/*
+		 * Algorytm Cannona (tak ja soldier:P)
+		 * 
+		 * Albo czeka az bedzie mogl wykonac pierwszy ruch (50 rund), moze wtedy 
+		 * sobie poobserwac okolice, pozbierac wiadomosci...
+		 *
+		 * Albo wykonuje Mission.RANDOM, tj nie wie co ma robic sie kreci po 
+		 * okolicy, gdy glodny idzie do Najblizszego Archona.
+		 *
+		 * Albo wykonuje Mission.ATTACK, tj dostaje od Archona sygnal do ataku
+		 * we wskazanym kierunku(ku lokalizacji target).
+		 * 
+		 */
+		mission = Mission.WAIT;
 
-		while (true) { //radio.isIncoming()) {
+		while (true) {
 			try {
-				Message msg = radio.get();
-				if (null == msg) { 
-					if (null != archon) stepTo(archon);
-					continue; // Moze byc przestarzale
-				}
-
-				switch (msg.ints[Radio.TYPE]) {
-					case Radio.HELLO:
-						if (RobotType.valueOf(msg.strings[Radio.HELLO_SENDER_TYPE]).equals(RobotType.ARCHON))
-							archon = msg.locations[Radio.HELLO_SENDER];
-						break;
-					case Radio.ENEMIES:
-						// TODO: troche syf z indeksami...
-						info("Cel do zniszczenia!!");
-						int i_s = 0, i_l = 1, i_i = 1, idx = -1, min = 1000;
-						int ch_i = -1, ca_i = -1, ar_i = -1;
-						int ch_min = 1000, ca_min = 1000, ar_min = 1000;
-
-						for (int i = 0; i < msg.ints[Radio.ENEMIES_SIZE]; ++i) {
-							int len = rc.getLocation().distanceSquaredTo(msg.locations[i_l]);
-							if (idx == -1 || len < min) { min = len; idx = i; }
-							switch (RobotType.valueOf(msg.strings[i_s])) {
-								case CHANNELER:
-									if ((ch_i == -1 || len < ch_min) && rc.canAttackSquare(msg.locations[i_l])) {
-										ch_min = len; ch_i = i;
-									} break;
-								case CANNON:
-									if ((ca_i == -1 || len < ca_min) && rc.canAttackSquare(msg.locations[i_l])) {
-										ca_min = len; ch_i = i;
-									} break;
-								case ARCHON:
-									if ((ar_i == -1 || len < ar_min) && rc.canAttackSquare(msg.locations[i_l])) {
-										ar_min = len; ar_i = i;
-									} break;
-							}
-							++i_s; ++i_l; ++i_i;
-						}
-
-						if (ch_i != -1) idx = ch_i;
-						else if (ca_i != -1) idx = ca_i;
-						else if (ar_i != -1) idx = ar_i;
-						else if (idx == -1) continue;
-
-						if (!rc.canAttackSquare(msg.locations[idx+1])) {
-							waitForMove();
-							rc.setDirection(rc.getLocation().directionTo(msg.locations[idx+1]));
-						}
-
-						waitForAttack();
-						if (RobotType.valueOf(msg.strings[idx]).isAirborne()) 
-							rc.attackAir(msg.locations[idx+1]);
-						else
-							rc.attackGround(msg.locations[idx+1]);
-						rc.yield();
-
-						break;
+				switch (mission) {
+					case WAIT:    do_wait();   break; // - oczekiwanie na misje
+					case FOLLOW:  do_follow(); break; // - podarzaj za archonem
+					case ATTACK:  do_attack(); break; // - atakuj
 					default:
-						/* inne ignoruje */
+						System.out.println("Nieobslugiwana misja: "+mission);
 				}
 			}
-			catch (Exception e) {
-				System.out.println("run(): Exception: " + e);
+			catch (Exception e) { 
+				System.out.println("EXCEPTION : " + e); 
+				e.printStackTrace();
+			}
+		}
+	}
+
+	public void do_wait() throws GameActionException
+	{
+		expensiveScan();
+
+		if (!rc.isMovementActive() && !rc.isAttackActive()) 
+			mission = Mission.FOLLOW;
+		else {
+			radio.receive();
+
+			while (radio.isIncoming()) {
+				Message m = radio.get();
+				if (null == m) continue;
+				if (m.ints[Radio.TYPE] == Radio.HELLO &&
+						RobotType.valueOf(m.strings[Radio.HELLO_SENDER_TYPE]).equals(RobotType.ARCHON)) {
+					archon = m.locations[Radio.HELLO_SENDER];
+					info("Ustawiam se pozycje Archona...");
+				}
+			}
+			
+			transferEnergonTo(soldiers);
+			transferEnergonTo(cannons);
+
+			rc.yield();
+		}
+	}
+
+	public void do_follow() throws GameActionException 
+	{
+		if (rc.getEnergonLevel() < 0.3*rc.getMaxEnergonLevel() && null != archon) {
+			info("Ide do Archona...");
+			stepTo(archon);
+		} else {
+			info("Pochodze se...");
+			fastScan();
+		
+			if (!enemies.isEmpty()) {
+				List<RInfoShort> fake = new LinkedList<RInfoShort>();
+				chooseTarget(enemies, fake);
+				mission = Mission.ATTACK;
+				return;
+			}
+
+			radio.receive();
+
+			while (radio.isIncoming()) {
+				Message m = radio.get();
+				if (null == m) continue;
+				if (m.ints[Radio.TYPE] == Radio.HELLO &&
+						RobotType.valueOf(m.strings[Radio.HELLO_SENDER_TYPE]).equals(RobotType.ARCHON)) {
+					archon = m.locations[Radio.HELLO_SENDER];
+					info("Ustawiam se pozycje Archona...");
+				} else if (m.ints[Radio.TYPE] == Radio.ENEMIES) {
+					info("Otrzymuje info o wrogu...");
+					List<RInfoShort> e2 = new LinkedList<RInfoShort>();
+					for (int i = 0; i < m.ints[Radio.ENEMIES_SIZE]; ++i)
+						e2.add(new RInfoShort(
+									m.locations[Radio.ENEMIES_L_START+i],
+									m.ints[Radio.ENEMIES_I_START+i],
+									m.strings[Radio.ENEMIES_S_START+i]));
+					chooseTarget(enemies, e2);
+					mission = Mission.ATTACK;
+					return;
+				}
+			}
+
+			if (null != archon && rc.getLocation().distanceSquaredTo(archon) > 9) {
+				stepTo(archon);
+			} else {
+				Direction d = rc.getDirection();
+
+				switch (rand.nextInt(4)) {
+					case 0: d = d.rotateRight(); break;
+					case 1: d = d.rotateLeft();  break;
+				}
+		
+				for (RInfo r : soldiers) {
+					if (null != archon) {
+						if (rc.getLocation().distanceSquaredTo(archon) < 
+								r.inf.location.distanceSquaredTo(archon))
+							transferEnergonTo(r);
+					}
+				}
+
+				stepTo(rc.getLocation().add(d));
+			}
+		}
+	}
+
+	public void do_attack() throws GameActionException
+	{
+		if (null == nearest) {
+			info("Atakuje! nearest = null");
+			mission = Mission.FOLLOW;
+			return;
+		}
+		
+		info("Atakuje! nearest = "+rc.getLocation().distanceSquaredTo(nearest)+" enemies.size(): "+enemies.size());
+
+		if (rc.getLocation().distanceSquaredTo(nearest) <= 25 && 
+				rc.getLocation().distanceSquaredTo(nearest) >= 4) { // Spr zasieg...
+			if (!rc.canAttackSquare(nearest)) {
+				if (!rc.isMovementActive()) {
+					rc.setDirection(rc.getLocation().directionTo(nearest));
+					rc.yield();
+				} // TODO TO MOZE JEST W CO INNEGO STRZELIC ?
+			} else {
+				if (!rc.isAttackActive()) {
+					if (nearestIsAir) 
+						rc.attackAir(nearest);
+					else
+						rc.attackGround(nearest);
+					rc.yield();						
+				} else {
+					info("Nie moge jeszcze atakowac, idle: " + rc.getRoundsUntilAttackIdle());
+					rc.yield();
+				}
+			}
+		} else {
+			if (!rc.isMovementActive()) 
+				stepTo(nearest);
+			else 
+				rc.yield();
+		}
+
+		int rd = -1;
+		LinkedList<RInfoShort> enemies2 = new LinkedList<RInfoShort>();
+
+		while (radio.isIncoming()) {
+			Message m = radio.get();
+			if (null == m) continue;
+			if (m.ints[Radio.TYPE] != Radio.ENEMIES) continue;
+			if (m.ints[Radio.ROUND] < rd) continue;
+			if (m.ints[Radio.ROUND] != rd) enemies2.clear();
+			
+			for (int i = 0; i < m.ints[Radio.ENEMIES_SIZE]; ++i)
+				enemies2.add(
+						new RInfoShort( 
+							m.locations[Radio.ENEMIES_L_START+i],
+							m.ints[Radio.ENEMIES_I_START+i],
+							m.strings[Radio.ENEMIES_S_START+i]));
+		}
+		fastScan();
+		chooseTarget(enemies, enemies2);
+		//checkSoldiers(); // czy by tu nie podladowac jakies soldziera z frontu
+
+		if (nearest == null) {
+			mission = Mission.FOLLOW;
+			return;
+		}
+	}
+
+	public void chooseTarget(List<RInfo> e1, List<RInfoShort> e2)
+	{
+		MapLocation p_nearest = nearest;
+		boolean p_nearestIsAir = nearestIsAir;
+		nearest = null;
+		
+		if (e1.isEmpty() && e2.isEmpty()) return;
+
+		int min = INFINITY;
+		double energon = INFINITY;
+		MapLocation ch_loc = null, ca_loc = null, ar_loc = null;
+		int ch_min = INFINITY, ca_min = INFINITY, ar_min = INFINITY;
+		
+		if (!e1.isEmpty()) {
+			for (RInfo r : e1) {
+				if (r.inf.location.isAdjacentTo(rc.getLocation())) continue;
+				int len = rc.getLocation().distanceSquaredTo(r.inf.location);
+				if (null == nearest || (len > 1 && len < min) || 
+						(len == min && r.inf.energonLevel < energon)) { 
+					min = len; nearest = r.inf.location;
+					energon = r.inf.energonLevel;
+					nearestIsAir = r.inf.type.isAirborne();
+				}
+				switch (r.inf.type) {
+					case CHANNELER:
+						if ((ch_loc == null || (len > 1 && len < ch_min)) && 
+								rc.canAttackSquare(r.inf.location)) {
+							ch_min = len; ch_loc = r.inf.location;
+						} break;
+					case CANNON:
+						if ((ca_loc == null || (len > 1 && len < ca_min)) && 
+								rc.canAttackSquare(r.inf.location)) {
+							ca_min = len; ca_loc = r.inf.location;
+						} break;
+					case ARCHON:
+						if ((ar_loc == null || (len > 1 && len < ar_min)) && 
+								rc.canAttackSquare(r.inf.location)) {
+							ar_min = len; ar_loc = r.inf.location;
+						} break;
+				}
 			}
 		}
 
+		if (!e2.isEmpty()) {
+			for (RInfoShort r : e2) {
+				if (r.location.isAdjacentTo(rc.getLocation())) continue;
+				int len = rc.getLocation().distanceSquaredTo(r.location);
+				if (null == nearest || (len > 1 && len < min) || 
+						(len == min && r.energon < energon)) { 
+					min = len; nearest = r.location; 
+					energon = r.energon;
+					nearestIsAir = r.type.isAirborne();
+				}
+				switch (r.type) {
+					case CHANNELER:
+						if ((ch_loc == null || (len > 1 && len < ch_min)) && 
+								rc.canAttackSquare(r.location)) {
+							ch_min = len; ch_loc = r.location;
+						} break;
+					case CANNON:
+						if ((ca_loc == null || (len > 1 && len < ca_min)) && 
+								rc.canAttackSquare(r.location)) {
+							ca_min = len; ca_loc = r.location;
+						} break;
+					case ARCHON:
+						if ((ar_loc == null || (len > 1 && len < ar_min)) && 
+								rc.canAttackSquare(r.location)) {
+							ar_min = len; ar_loc = r.location;
+						} break;
+				}
+			}
+		}
 
+		if (ch_loc != null)      { nearest = ch_loc; min = ch_min; nearestIsAir = false; } 
+		else if (ca_loc != null) { nearest = ca_loc; min = ca_min; nearestIsAir = false; }
+		else if (ar_loc != null) { nearest = ar_loc; min = ar_min; nearestIsAir = true; }
+
+		/*if (nearest != null) countdown = 0;
+		else {
+			if (countdown < 1) { 
+				++countdown;
+				nearest = p_nearest;
+				nearestIsAir = p_nearestIsAir;
+			}
+		}*/
+
+		// TODO : Uwaga na channelera
 	}
+
+
+
+
 
 }

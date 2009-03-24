@@ -9,13 +9,16 @@ import pt209223.navigation.*;
 import pt209223.communication.*;
 
 public class Worker extends AbstractRobot {
-	// - Na stairs trzymamy sciezke ukladania blokow.
-	// - Od 'First' do 'Last' gdzie 'Last' to pozycja
-	// - fluxa. Przy starcie Worker czeka az, Archon 
-	// - powie jakie sa schody(moze byc tak, ze juz 
-	// - jakies sa. Za kazdym dolozeniem bloku na 
-	// - sciezke Worker powiadamia, ze dolozyl blok.
-	// - Archon, odbierze i zapamieta.
+	/*
+	 * Worker pamieta na liscie kolejne schodki, jak ukladac
+	 * bloki, ostatnia pozycja to flux. Gdy Worker dolozy
+	 * nowy schodek, powiadamia o tym Archona. Jest to 
+	 * zabezpieczenie przed wypadkiem smierci pracujacego 
+	 * Workera. Wtedy to Archona nowemu Workerowi przekaze
+	 * informacje o pozycjach kolejnych schodow.
+	 * TODO: Zeby moglo pracowac kilku workerow na raz i
+	 * nie przeszkadzaly sobie.
+	 */ 
 	private MapLocation nearest, next;
 	private MapLocation[] blocks;
 	private LinkedList<MapLocation> stairs;
@@ -33,11 +36,25 @@ public class Worker extends AbstractRobot {
 
 	public void run()
 	{
-		mission = Mission.NONE;
-		do_mission();
+		mission = Mission.WAIT;
+
+		while (true) {
+			try {
+				switch (mission) {
+					case WAIT:         do_wait();        break; // - czekamy na info od archona
+					case EXPLORE:      do_explore();     break; // - przeszukujemy teren
+					case FIND_BLOCK:   do_find_block();  break; // - idziemy po blok
+					case GO_BACK:      do_go_back();     break; // - wracamy do archona
+					case BRING_BLOCK:  do_bring_block(); break; // - przynosimy blok
+					default:
+						System.out.println("Nieobslugiwana misja: " + mission);
+				}
+			}
+			catch (Exception e) { }
+		}
 	}
 
-	public void do_none() throws GameActionException
+	public void do_wait() throws GameActionException
 	{
 		// Czekamy co powie archon o schodkach :]
 
@@ -49,6 +66,7 @@ public class Worker extends AbstractRobot {
 
 			FluxDeposit[] fds = rc.senseNearbyFluxDeposits();
 			MapLocation flux = null;
+
 			for (FluxDeposit fd : fds) {
 				FluxDepositInfo fdi = rc.senseFluxDepositInfo(fd);
 				if (null == flux) flux = fdi.location;
@@ -60,29 +78,62 @@ public class Worker extends AbstractRobot {
 	
 			stairs.clear();
 			for (int i = Radio.STAIRS_START, cnt = 0; cnt < msg.ints[Radio.STAIRS_SIZE]; ++i, ++cnt) 
-				stairs.addFirst(msg.locations[i]);
+				stairs.addLast(msg.locations[i]);
 			if (!rc.getLocation().isAdjacentTo(stairs.getLast()) || 
 					!stairs.getLast().equals(flux)) {
 				info("Nieprawidlowe dane od Archona...");
 				stairs.clear();
 				stairs.addFirst(flux);
+			} else {
+				String is = " = ";
+				for (int i = stairs.size()-1; i > 0; --i) 
+					is += (" " + stairs.get(i).directionTo(stairs.get(i-1)));
+				info("Mamy schody : " + stairs.size()+is);
 			}
 	
-			mission = Mission.GOTO_BLOCK;
+			mission = Mission.FIND_BLOCK;
 			return;
 		}
 	}
 
-	public void do_goto_block()
+
+	public void goToAndListen(MapLocation trg)
+	{
+		while (!rc.getLocation().equals(trg)) {
+			stepTo(trg);
+			radio.receive();
+	
+			while (radio.isIncoming()) {
+				Message m = radio.get();
+				if (m == null) continue;
+				if (m.ints[Radio.TYPE] != Radio.STAIRS) {
+					LinkedList<MapLocation> nexts = new LinkedList<MapLocation>();
+
+					for (int i = Radio.STAIRS_START, cnt = 0; 
+							cnt < m.ints[Radio.STAIRS_SIZE]; ++i, ++cnt) 
+						nexts.addLast(m.locations[i]);
+
+					if (!nexts.getLast().equals(stairs.getLast())) {
+						info("Nieprawidlowe dane od ...");
+					} else {
+						for (MapLocation l : nexts) stairs.addLast(l);
+						info("Mamy teraz schody : " + stairs.size());
+					}
+				}
+			}
+		}	
+	}
+
+	public void do_find_block()
 	{
 		try {
 			if (rc.getNumBlocks() >= 1) {
-				mission = Mission.GOTO_FLUX;
+				mission = Mission.FIND_FLUX;
 				return;
 			}
 
 			if (rc.getEnergonLevel() < 0.3*rc.getMaxEnergonLevel()) {
-				mission = Mission.GOTO_ARCHON;
+				mission = Mission.GO_BACK;
 				return;
 			}
 			
@@ -98,24 +149,25 @@ public class Worker extends AbstractRobot {
 					for (MapLocation l : lastSeen) { blocks[i] = l; ++i; }
 				} else {
 					info("Nie widze zadnych sensownych blockow:(");
-					mission = Mission.RANDOM;
+					mission = Mission.EXPLORE;
 					return;
 				}
 				// jesli jednak nie, to Worker sobie pochodzi, tu i tam...
 				if (!findNearest()) {
 					lastSeen.clear();
 					info("Nadal nie widze zadnych sensownych blockow:(");
-					mission = Mission.RANDOM;
+					mission = Mission.EXPLORE;
 					return;
 				}
 			}
 			
 			info("Ide... (" + rc.getLocation().distanceSquaredTo(next) + ")");
-			goTo(next);
+
+			goToAndListen(next);
 			info("Biore bloka...");
 
 			// Jesli nie da sie pobrac bloku, to Worker sobie troche pochodzi, popatrzy...
-			if (!rc.canLoadBlockFromLocation(nearest)) { mission = Mission.RANDOM; return; }
+			if (!rc.canLoadBlockFromLocation(nearest)) { mission = Mission.EXPLORE; return; }
 
 			waitForMove();
 		
@@ -129,16 +181,16 @@ public class Worker extends AbstractRobot {
 			while (wt > 0) { rc.yield(); --wt; }
 
 			// Do domciu...
-			mission = Mission.GOTO_FLUX;	
+			mission = Mission.BRING_BLOCK;	
 		}
 		catch (Exception e) { }
 	}
 
-	public void do_goto_flux() throws GameActionException
+	public void do_bring_block() throws GameActionException
 	{
 		// Nie mam blokow? To co ja tu jeszcze robie?
 		if (rc.getNumBlocks() == 0) {
-			mission = Mission.GOTO_BLOCK;
+			mission = Mission.FIND_BLOCK;
 			return;
 		}
 
@@ -147,9 +199,9 @@ public class Worker extends AbstractRobot {
 		// Kieruje sie do pierwszego schodka
 		while (!rc.getLocation().isAdjacentTo(stairs.getFirst())) {
 			if (rc.getLocation().equals(stairs.getFirst()))
-				stepTo(rc.getLocation().add(rc.getDirection().rotateRight()));
+				goToAndListen(rc.getLocation().add(rc.getDirection().rotateRight()));
 			else // wpp idz w kierunku schodka
-				stepTo(stairs.getFirst());
+				goToAndListen(stairs.getFirst());
 			info("Ide, ide... (" + rc.getLocation().distanceSquaredTo(stairs.getFirst())+")");
 		}
 		info("Hah! jestem!");
@@ -192,10 +244,10 @@ public class Worker extends AbstractRobot {
 			radio.broadcast();
 		}
 
-		mission = Mission.GOTO_BLOCK;
+		mission = Mission.FIND_BLOCK;
 	}
 
-	public void do_goto_archon()
+	public void do_go_back()
 	{
 		// Archon jest tam gdzie flux, jesli nawet zdarzy sie, ze
 		// tak nie bedzie to mozna to uznac sytuacje tak awaryjna
@@ -205,26 +257,26 @@ public class Worker extends AbstractRobot {
 		while (!rc.getLocation().isAdjacentTo(stairs.getLast())) 
 			stepTo(stairs.getLast());
 		
-		mission = Mission.RANDOM;
+		mission = Mission.EXPLORE;
 	}
 
-	public void do_random()
+	public void do_explore()
 	{
 		// Pochodzimy sobie...
 		info("Pochodze sobie...");
 
 		if (rc.getNumBlocks() >= 1) {
-			mission = Mission.GOTO_FLUX;
+			mission = Mission.BRING_BLOCK;
 			return;
 		}
 
 		if (rc.getEnergonLevel() < 0.3*rc.getMaxEnergonLevel()) {
-			mission = Mission.GOTO_ARCHON;
+			mission = Mission.GO_BACK;
 			return;
 		}
 
 		if (scanForBlocks()) {
-			mission = Mission.GOTO_BLOCK;
+			mission = Mission.FIND_BLOCK;
 			return;
 		}
 
@@ -322,5 +374,5 @@ public class Worker extends AbstractRobot {
 		}
 	}
 
-
 }
+
