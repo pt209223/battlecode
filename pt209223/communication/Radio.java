@@ -270,10 +270,10 @@ public class Radio {
 		Message[] msgs = rc.getAllMessages();
 		if (null == msgs || 0 == msgs.length) return;
 
-		// - Liczba dolaczonych Message'y (byc moze trzeba bedzie cofnac !)
-		int app = 0; 
-
 		for (Message m : msgs) {
+			// - Liczba dolaczonych Message'y (byc moze trzeba bedzie cofnac !)
+			int app = 0; 
+
 			// - Radio nie wysyla null-i
 			if (null == m.ints || null == m.locations || null == m.strings) continue;
 
