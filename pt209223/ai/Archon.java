@@ -31,6 +31,7 @@ public class Archon extends AbstractRobot {
 	private int soldierArmy;                    // licznosc armi soldierow
 	private int cannonArmy;                     // licznosc armi cannonow
 	private int countdown;
+	private int lastSpawn;
 
 	public Archon(RobotController _rc) 
 	{
@@ -48,9 +49,10 @@ public class Archon extends AbstractRobot {
 		amILeader = false;
 		strategy = Strategy.ECONOMY;
 		mission = Mission.FIND_FLUX;
-		soldierArmy = 2;
+		soldierArmy = 5;
 		cannonArmy = 1;
 		countdown = 0;
+		lastSpawn = 0;
 	}
 
 	// Dodawanie informacji co robot robi.
@@ -156,8 +158,9 @@ public class Archon extends AbstractRobot {
 			info("Ma Channelera, wybuduje Cannona");
 			if ( cannons.size()  <  1*cannonArmy  ) spawn(RobotType.CANNON);
 		} else {
-			if ( soldiers.size() <  2*soldierArmy ) spawn(RobotType.SOLDIER);
+			if ( soldiers.size() <  3             ) spawn(RobotType.SOLDIER);
 			if ( cannons.size()  <  1*cannonArmy  ) spawn(RobotType.CANNON);
+			if ( soldiers.size() <  1*soldierArmy ) spawn(RobotType.SOLDIER);
 		}
 
 		transferEnergonTo(soldiers);
@@ -230,7 +233,7 @@ public class Archon extends AbstractRobot {
 			boolean toEscape = false;
 			for (RInfo r : enemies) {
 				if (r.inf.type.equals(RobotType.CANNON)) { 
-					if ((soldiers.isEmpty() || rc.getEnergonLevel() < 0.2*rc.getMaxEnergonLevel()) &&
+					if ((soldiers.isEmpty() || rc.getEnergonLevel() < 0.3*rc.getMaxEnergonLevel()) &&
 							rc.getLocation().distanceSquaredTo(r.inf.location) <= 25) { toEscape = true; break; }
 				} else if (r.inf.type.equals(RobotType.SOLDIER)) {
 					if ((soldiers.isEmpty() && rc.getEnergonLevel() < 0.3*rc.getMaxEnergonLevel()) &&
@@ -243,8 +246,8 @@ public class Archon extends AbstractRobot {
 		transferEnergonTo(soldiers);
 		transferEnergonTo(cannons);
 
-		if ( cannons.size()  <  cannonArmy  ) spawn(RobotType.CANNON);
-		if ( soldiers.size() <  soldierArmy ) spawn(RobotType.SOLDIER);
+		if      ( cannons.size()  <  cannonArmy  ) spawn(RobotType.CANNON);
+		else if ( soldiers.size() <  soldierArmy ) spawn(RobotType.SOLDIER);
 	
 		// listen ();
 
@@ -252,6 +255,12 @@ public class Archon extends AbstractRobot {
 			info("A teraz czas na atak");
 			/*if (countdown > 0) --countdown;
 			else*/ mission = Mission.ATTACK;
+		}
+
+		if (lastSpawn > 0) {
+			radio.sayHello();
+			radio.broadcast();
+			lastSpawn = 0;
 		}
 
 		rc.yield();
@@ -281,26 +290,22 @@ public class Archon extends AbstractRobot {
 			}
 
 			if (channelers.isEmpty()) { 
-				if (spawn(RobotType.CHANNELER))
-					radio.sayHello();
+				spawn(RobotType.CHANNELER);
+			} else if (cannons.size() < cannonArmy) {
+				spawn(RobotType.CANNON);
+			} else if (soldiers.size() < soldierArmy) {
+				spawn(RobotType.SOLDIER);
 			}
 
-			if (soldiers.size() < soldierArmy) {
-				if (spawn(RobotType.SOLDIER))
-					radio.sayHello();
-			}
-
-			if (cannons.size() < cannonArmy) {
-				if (spawn(RobotType.CANNON)) 
-					radio.sayHello();
-			}
+			if (lastSpawn > 0) 
+				radio.sayHello();
 
 		} else {
 			if (rc.getEnergonLevel() < 0.5*rc.getMaxEnergonLevel() &&
-					channelers.isEmpty() && soldiers.isEmpty()) {
-				info("Atakuja... ratunku...");
+					channelers.isEmpty() && enemies.size() > soldiers.size()) {
+				info("Atakuja... ratunku..."); // TODO: trzeba by tu dac jakis rozsadniejszy warunek
 				mission = Mission.ESCAPE; return; 
-			}
+			} 
 
 			if (cannons.size() < 1) {
 				if (spawn(RobotType.CANNON))
@@ -312,7 +317,7 @@ public class Archon extends AbstractRobot {
 			radio.sayAttack(target);
 		}
 
-		if (radio.isOutgoing()) radio.broadcast();
+		if (radio.isOutgoing()) { radio.broadcast(); lastSpawn = 0; }
 
 		waitForMove();
 	}
@@ -440,6 +445,7 @@ public class Archon extends AbstractRobot {
 		radio.sayHello();
 		radio.broadcast();
 		lastBroadcast = Clock.getRoundNum();
+		lastSpawn = 0;
 	}
 
 	public MapLocation chooseTarget()
@@ -491,6 +497,7 @@ public class Archon extends AbstractRobot {
 
 				waitForMove();
 				rc.spawn(t);
+				lastSpawn = Clock.getRoundNum();
 				return true;
 			}
 			catch (Exception e) { 
